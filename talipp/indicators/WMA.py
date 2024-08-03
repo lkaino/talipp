@@ -1,3 +1,5 @@
+from collections import deque
+
 import numpy as np
 from typing import List, Any
 
@@ -32,18 +34,38 @@ class WMA(Indicator):
         self.period = period
 
         self.denom_sum = period * (period + 1) / 2.0
+        self.weights = np.arange(1, self.period + 1)
+        self.index = 0  # Start index at 0
+
+        self.input_values_np = np.zeros(period)
+        if input_values:
+            # Populate with initial values if provided, handling wrap-around
+            init_len = min(len(input_values), period)
+            self.input_values_np[-init_len:] = input_values[-init_len:]
+            self.index = init_len % period
 
         self.initialize(input_values, input_indicator)
 
     def _calculate_new_value(self) -> Any:
+        self.add_value(self.input_values[-1])
         if not has_valid_values(self.input_values, self.period):
             return None
 
-        # Convert input_values to a NumPy array for vectorized operations
-        input_values_np = np.array(self.input_values[-self.period:])
+        # Compute indices for a virtual rotation to align the oldest to the newest
+        indices = (self.index + np.arange(self.period)) % self.period
 
-        # Calculate weighted moving average using NumPy vectorized operations
-        weights = np.arange(1, self.period + 1)
-        wma = np.sum(input_values_np * weights) / self.denom_sum
+        # Calculate the weighted moving average with correct alignment
+        wma = np.dot(self.input_values_np[indices], self.weights) / self.denom_sum
 
         return wma
+
+    def add_value(self, value: float):
+        """
+        Add a new value to the WMA calculation.
+
+        :param value: The new value to add to the calculation.
+        """
+        # Insert the new value at the current index
+        self.input_values_np[self.index] = value
+        # Update the index wrapping around using modulo operation
+        self.index = (self.index + 1) % self.period
